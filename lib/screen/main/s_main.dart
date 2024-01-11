@@ -1,6 +1,13 @@
-import 'package:fast_app_base/screen/main/tab/tab_item.dart';
-import 'package:fast_app_base/screen/main/tab/tab_navigator.dart';
+import 'dart:convert';
+
+import 'package:fast_app_base/common/dart/extension/num_duration_extension.dart';
+import 'package:fast_app_base/common/widget/animated_number_text.dart';
+import 'package:fast_app_base/common/widget/line_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:live_background/live_background.dart';
+import 'package:live_background/object/particle_shape_type.dart';
+import 'package:live_background/widget/live_background_widget.dart';
+import 'package:web_socket_channel/io.dart';
 
 import '../../common/common.dart';
 import 'w_menu_drawer.dart';
@@ -12,45 +19,85 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => MainScreenState();
 }
 
-class MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
-  TabItem _currentTab = TabItem.home;
-  final tabs = [TabItem.home, TabItem.favorite];
-  final List<GlobalKey<NavigatorState>> navigatorKeys = [];
+class MainScreenState extends State<MainScreen> {
+  final wsUrl = Uri.parse('wss://stream.binance.com:9443/ws/btcusdt@trade');
+  late final channel = IOWebSocketChannel.connect(wsUrl);
+  late final Stream<dynamic> stream;
 
-  int get _currentIndex => tabs.indexOf(_currentTab);
+  String priceString = "Loading";
+  final List<double> priceList = [];
 
-  GlobalKey<NavigatorState> get _currentTabNavigationKey => navigatorKeys[_currentIndex];
-
-  bool get extendBody => true;
-
-  static double get bottomNavigationBarBorderRadius => 30.0;
+  //시간을 1초로 생성
+  final intervalDuration = 1.seconds;
+  DateTime lastUpdatedTime = DateTime.now();
 
   @override
   void initState() {
+    stream = channel.stream;
+    stream.listen((event) {
+      //event : 비트코인 정보가 String 값으로 들어옴
+
+      final obj = json.decode(event);
+      final double price = double.parse(obj['p']); // 비트코인 가격 파싱
+
+      if (DateTime.now().difference(lastUpdatedTime) > intervalDuration) {
+        //마지막 업데이트 시간과 현재시각이 1초 차이 이상이면 setState진행 -> 1초간격으로 업데이트
+        lastUpdatedTime = DateTime.now(); //시간 업데이트
+        setState(() {
+          priceList.add(price); //가격을 리스트에 추가
+          priceString = price.toDoubleStringAsFixed(); //가격을 String으로 변경
+        });
+      }
+    });
+
     super.initState();
-    initNavigatorKeys();
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _handleBackPressed,
-      child: Scaffold(
-        extendBody: extendBody, //bottomNavigationBar 아래 영역 까지 그림
-        drawer: const MenuDrawer(),
-        body: Container(
-          color: context.appColors.seedColor.getMaterialColorValues[200],
-          padding: EdgeInsets.only(bottom: extendBody ? 60 - bottomNavigationBarBorderRadius : 0),
-          child: SafeArea(
-            bottom: !extendBody,
-            child: pages,
+    return Scaffold(
+      drawer: const MenuDrawer(),
+      body: Stack(children: [
+        const LiveBackgroundWidget(
+          shape: ParticleShapeType.circle,
+          velocityX: -5,
+          particleMinSize: 10,
+          particleMaxSize: 60,
+          particleCount: 300,
+          palette: Palette(
+            colors: [
+              Colors.blueGrey,
+              Colors.green,
+              Colors.pink,
+              Colors.yellow,
+              //Color(0xff165B33),
+              //Color(0xff83ec00),
+            ]
           ),
         ),
-        bottomNavigationBar: _buildBottomNavigationBar(context),
-      ),
+        SafeArea(
+          child: Center(
+              child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              //Text
+              AnimatedNumberText(
+                priceString,
+                textStyle:
+                    const TextStyle(fontSize: 50, fontWeight: FontWeight.bold),
+                duration: 50.ms,
+              ),
+
+              //차트
+              LineChartWidget(priceList)
+            ],
+          )),
+        ),
+      ]),
     );
   }
 
+/*
   IndexedStack get pages => IndexedStack(
       index: _currentIndex,
       children: tabs
@@ -75,6 +122,7 @@ class MainScreenState extends State<MainScreen> with SingleTickerProviderStateMi
     // maybePop 가능하면 나가지 않는다.
     return isFirstRouteInCurrentTab;
   }
+
 
   Widget _buildBottomNavigationBar(BuildContext context) {
     return Container(
@@ -153,5 +201,5 @@ class MainScreenState extends State<MainScreen> with SingleTickerProviderStateMi
     for (final _ in tabs) {
       navigatorKeys.add(GlobalKey<NavigatorState>());
     }
-  }
+  }*/
 }
